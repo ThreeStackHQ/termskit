@@ -7,6 +7,7 @@ import {
   integer,
   primaryKey,
   unique,
+  index,
 } from 'drizzle-orm/pg-core';
 
 // ─── Workspaces ───────────────────────────────────────────────────────────────
@@ -16,6 +17,8 @@ export const workspaces = pgTable('workspaces', {
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   plan: text('plan').notNull().default('free'),
+  ownerId: text('owner_id'),
+  stripeCustomerId: text('stripe_customer_id'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
@@ -34,17 +37,26 @@ export const workspaceApiKeys = pgTable('workspace_api_keys', {
 
 // ─── Policies ────────────────────────────────────────────────────────────────
 
-export const policies = pgTable('policies', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  slug: text('slug').notNull(),
-  displayName: text('display_name').notNull(),
-  currentVersion: text('current_version').notNull().default('v1.0'),
-  content: text('content').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+export const policies = pgTable(
+  'policies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    slug: text('slug').notNull(),
+    displayName: text('display_name').notNull(),
+    currentVersion: text('current_version').notNull().default('v1.0'),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceSlugIdx: unique('policies_workspace_slug').on(
+      table.workspaceId,
+      table.slug
+    ),
+  })
+);
 
 // ─── Acceptances ─────────────────────────────────────────────────────────────
 
@@ -72,6 +84,11 @@ export const acceptances = pgTable(
       table.version,
       table.externalUserId
     ),
+    policyUserIdx: index('acceptances_policy_user_idx').on(
+      table.policyId,
+      table.externalUserId
+    ),
+    workspaceIdx: index('acceptances_workspace_idx').on(table.workspaceId),
   })
 );
 
