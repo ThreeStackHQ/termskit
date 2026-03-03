@@ -6,7 +6,7 @@ export interface RecordMeta {
 export class TermsKit {
   constructor(
     private apiKey: string,
-    private baseUrl = 'https://termskit.threestack.io'
+    private baseUrl = 'https://api.termskit.threestack.io'
   ) {}
 
   private get headers(): Record<string, string> {
@@ -17,16 +17,18 @@ export class TermsKit {
   }
 
   /**
-   * Check whether a user has accepted a specific policy (any version).
+   * Check whether a user has accepted a specific policy (current version).
    */
-  async hasAccepted(userId: string, policySlug: string): Promise<boolean> {
+  async hasAccepted(
+    userId: string,
+    slug: string
+  ): Promise<{ accepted: boolean; version: string }> {
     const res = await fetch(
-      `${this.baseUrl}/api/v1/policies/${policySlug}/check?userId=${encodeURIComponent(userId)}`,
+      `${this.baseUrl}/api/v1/status?policySlug=${encodeURIComponent(slug)}&userId=${encodeURIComponent(userId)}`,
       { headers: this.headers }
     );
     if (!res.ok) throw new Error(`TermsKit: hasAccepted failed (${res.status})`);
-    const data = (await res.json()) as { accepted: boolean };
-    return data.accepted;
+    return res.json() as Promise<{ accepted: boolean; version: string }>;
   }
 
   /**
@@ -34,14 +36,14 @@ export class TermsKit {
    */
   async record(
     userId: string,
-    policySlug: string,
+    slug: string,
     version: string,
     meta?: RecordMeta
   ): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/api/v1/policies/${policySlug}/accept`, {
+    const res = await fetch(`${this.baseUrl}/api/v1/accept`, {
       method: 'POST',
       headers: this.headers,
-      body: JSON.stringify({ userId, version, ...meta }),
+      body: JSON.stringify({ policySlug: slug, userId, version, ...meta }),
     });
     if (!res.ok) throw new Error(`TermsKit: record failed (${res.status})`);
   }
@@ -49,11 +51,11 @@ export class TermsKit {
   /**
    * Trigger a re-acceptance campaign for a policy.
    */
-  async requireReAcceptance(policySlug: string, targetVersion: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/api/v1/policies/${policySlug}/campaigns`, {
+  async requireReAcceptance(slug: string, version: string): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/api/v1/require`, {
       method: 'POST',
       headers: this.headers,
-      body: JSON.stringify({ targetVersion }),
+      body: JSON.stringify({ policySlug: slug, targetVersion: version }),
     });
     if (!res.ok)
       throw new Error(`TermsKit: requireReAcceptance failed (${res.status})`);
@@ -61,12 +63,18 @@ export class TermsKit {
 
   /**
    * Generate a hosted gate URL for a user to accept a policy.
+   * The uid parameter must be computed server-side using HMAC-SHA256.
+   * uid = crypto.createHmac('sha256', TERMSKIT_HMAC_SECRET).update(userId).digest('hex')
    */
-  gateUrl(userId: string, policySlug: string, returnUrl: string): string {
-    const params = new URLSearchParams({
-      userId,
-      returnUrl,
-    });
-    return `${this.baseUrl}/g/${policySlug}?${params.toString()}`;
+  gateUrl(
+    userId: string,
+    slug: string,
+    returnUrl: string,
+    options?: { workspaceSlug?: string; uid?: string }
+  ): string {
+    const workspaceSlug = options?.workspaceSlug ?? 'default';
+    const params = new URLSearchParams({ userId, return: returnUrl });
+    if (options?.uid) params.set('uid', options.uid);
+    return `${this.baseUrl}/g/${workspaceSlug}/${slug}?${params.toString()}`;
   }
 }

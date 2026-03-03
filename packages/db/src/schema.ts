@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgEnum,
   uuid,
   text,
   timestamp,
@@ -9,101 +10,9 @@ import {
   unique,
 } from 'drizzle-orm/pg-core';
 
-// ─── Workspaces ───────────────────────────────────────────────────────────────
-
-export const workspaces = pgTable('workspaces', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: text('name').notNull(),
-  slug: text('slug').notNull().unique(),
-  plan: text('plan').notNull().default('free'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
-
-// ─── Workspace API Keys ───────────────────────────────────────────────────────
-
-export const workspaceApiKeys = pgTable('workspace_api_keys', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  keyHash: text('key_hash').notNull().unique(),
-  keyPrefix: text('key_prefix').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  lastUsedAt: timestamp('last_used_at'),
-});
-
-// ─── Policies ────────────────────────────────────────────────────────────────
-
-export const policies = pgTable('policies', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  slug: text('slug').notNull(),
-  displayName: text('display_name').notNull(),
-  currentVersion: text('current_version').notNull().default('v1.0'),
-  content: text('content').notNull(),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
-
-// ─── Acceptances ─────────────────────────────────────────────────────────────
-
-export const acceptances = pgTable(
-  'acceptances',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    workspaceId: uuid('workspace_id')
-      .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
-    policyId: uuid('policy_id')
-      .notNull()
-      .references(() => policies.id, { onDelete: 'cascade' }),
-    version: text('version').notNull(),
-    externalUserId: text('external_user_id').notNull(),
-    ip: text('ip'),
-    userAgent: text('user_agent'),
-    method: text('method').notNull().default('api'),
-    acceptedAt: timestamp('accepted_at').notNull().defaultNow(),
-  },
-  (table) => ({
-    uniqueAcceptance: unique().on(
-      table.workspaceId,
-      table.policyId,
-      table.version,
-      table.externalUserId
-    ),
-  })
-);
-
-// ─── Reacceptance Campaigns ───────────────────────────────────────────────────
-
-export const reacceptanceCampaigns = pgTable('reacceptance_campaigns', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  policyId: uuid('policy_id')
-    .notNull()
-    .references(() => policies.id, { onDelete: 'cascade' }),
-  targetVersion: text('target_version').notNull(),
-  status: text('status').notNull().default('active'),
-  notifyByEmail: boolean('notify_by_email').notNull().default(false),
-  totalUsers: integer('total_users').notNull().default(0),
-  completedCount: integer('completed_count').notNull().default(0),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
-
-// ─── Subscriptions ────────────────────────────────────────────────────────────
-
-export const subscriptions = pgTable('subscriptions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id')
-    .notNull()
-    .references(() => workspaces.id, { onDelete: 'cascade' }),
-  stripeCustomerId: text('stripe_customer_id').notNull(),
-  stripePriceId: text('stripe_price_id'),
-  plan: text('plan').notNull().default('free'),
-  status: text('status').notNull(),
-});
-
-// ─── NextAuth Tables ──────────────────────────────────────────────────────────
+export const planEnum = pgEnum('plan', ['free', 'indie', 'pro']);
+export const methodEnum = pgEnum('method', ['api', 'gate']);
+export const campaignStatusEnum = pgEnum('campaign_status', ['active', 'completed']);
 
 export const users = pgTable('users', {
   id: text('id').notNull().primaryKey(),
@@ -131,9 +40,7 @@ export const accounts = pgTable(
     session_state: text('session_state'),
   },
   (account) => ({
-    compoundKey: primaryKey({
-      columns: [account.provider, account.providerAccountId],
-    }),
+    compoundKey: primaryKey({ columns: [account.provider, account.providerAccountId] }),
   })
 );
 
@@ -156,3 +63,93 @@ export const verificationTokens = pgTable(
     compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
   })
 );
+
+export const workspaces = pgTable('workspaces', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  ownerId: text('owner_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  plan: planEnum('plan').notNull().default('free'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const subscriptions = pgTable('subscriptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  stripeCustomerId: text('stripe_customer_id').notNull(),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  stripePriceId: text('stripe_price_id'),
+  status: text('status').notNull(),
+  currentPeriodEnd: timestamp('current_period_end'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const workspaceApiKeys = pgTable('workspace_api_keys', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  prefix: text('prefix').notNull(),
+  keyHash: text('key_hash').notNull().unique(),
+  name: text('name').notNull().default('Default'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  lastUsedAt: timestamp('last_used_at'),
+});
+
+export const policies = pgTable('policies', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id')
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  slug: text('slug').notNull(),
+  displayName: text('display_name').notNull(),
+  currentVersion: text('current_version').notNull().default('v1.0'),
+  content: text('content').notNull().default(''),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const acceptances = pgTable(
+  'acceptances',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    policyId: uuid('policy_id')
+      .notNull()
+      .references(() => policies.id, { onDelete: 'cascade' }),
+    version: text('version').notNull(),
+    externalUserId: text('external_user_id').notNull(),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    method: methodEnum('method').notNull().default('api'),
+    acceptedAt: timestamp('accepted_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueAcceptance: unique('unique_acceptance').on(
+      table.workspaceId,
+      table.policyId,
+      table.version,
+      table.externalUserId
+    ),
+  })
+);
+
+export const reacceptanceCampaigns = pgTable('reacceptance_campaigns', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  policyId: uuid('policy_id')
+    .notNull()
+    .references(() => policies.id, { onDelete: 'cascade' }),
+  targetVersion: text('target_version').notNull(),
+  status: campaignStatusEnum('status').notNull().default('active'),
+  notifyByEmail: boolean('notify_by_email').notNull().default(false),
+  totalUsers: integer('total_users').notNull().default(0),
+  completedCount: integer('completed_count').notNull().default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
