@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import crypto from 'crypto';
 import { getDb, policies, workspaces } from '@termskit/db';
 import { eq, and } from 'drizzle-orm';
+import { GateClient } from './gate-client';
 
 interface Props {
   params: { workspaceSlug: string; policySlug: string };
@@ -14,16 +15,27 @@ export default async function GatePage({ params, searchParams }: Props) {
 
   if (!uid || !userId || !returnUrl) return notFound();
 
-  // Validate HMAC to prevent IDOR
+  // SEC-002 / SEC-010: Validate HMAC-SHA256 signed uid param
   try {
     const secret =
       process.env.TERMSKIT_HMAC_SECRET ?? 'default-build-secret-32-chars-xx';
+
+    // Verify HMAC includes expiry: uid = hex(hmac) + '.' + expiryTimestamp
+    const parts = uid.split('.');
+    if (parts.length !== 2) return notFound();
+
+    const [hmacHex, expiryStr] = parts;
+    if (!hmacHex || !expiryStr) return notFound();
+
+    const expiry = parseInt(expiryStr, 10);
+    if (isNaN(expiry) || Date.now() > expiry) return notFound(); // 15-min expiry enforced
+
     const expectedHmac = crypto
       .createHmac('sha256', secret)
-      .update(userId)
+      .update(`${userId}.${expiryStr}`)
       .digest('hex');
 
-    const uidBuf = Buffer.from(uid, 'hex');
+    const uidBuf = Buffer.from(hmacHex, 'hex');
     const expectedBuf = Buffer.from(expectedHmac, 'hex');
 
     if (
@@ -56,57 +68,14 @@ export default async function GatePage({ params, searchParams }: Props) {
   const p = policyRows[0]!;
 
   return (
-    <main
-      style={{
-        maxWidth: 700,
-        margin: '0 auto',
-        padding: '2rem',
-        fontFamily: 'system-ui, sans-serif',
-      }}
-    >
-      <h1
-        style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}
-      >
-        {p.displayName}
-      </h1>
-      <p style={{ color: '#6b7280', marginBottom: '1.5rem' }}>
-        Version: {p.currentVersion}
-      </p>
-      <div
-        style={{
-          background: '#f9fafb',
-          border: '1px solid #e5e7eb',
-          borderRadius: 8,
-          padding: '1.5rem',
-          marginBottom: '2rem',
-          whiteSpace: 'pre-wrap',
-          lineHeight: 1.6,
-        }}
-      >
-        {p.content}
-      </div>
-      <form action="/api/v1/gate-accept" method="POST">
-        <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
-        <input type="hidden" name="policySlug" value={policySlug} />
-        <input type="hidden" name="userId" value={userId} />
-        <input type="hidden" name="version" value={p.currentVersion} />
-        <input type="hidden" name="returnUrl" value={returnUrl} />
-        <button
-          type="submit"
-          style={{
-            background: '#2563eb',
-            color: '#fff',
-            padding: '0.75rem 2rem',
-            borderRadius: 6,
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            fontWeight: 600,
-          }}
-        >
-          I Accept this Policy
-        </button>
-      </form>
-    </main>
+    <GateClient
+      workspaceSlug={workspaceSlug}
+      policySlug={policySlug}
+      policyName={p.displayName}
+      policyContent={p.content}
+      policyVersion={p.currentVersion}
+      userId={userId}
+      returnUrl={returnUrl}
+    />
   );
 }
