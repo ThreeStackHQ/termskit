@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { getDb, reacceptanceCampaigns, policies, acceptances } from '@termskit/db';
 import { eq, and, ne } from 'drizzle-orm';
 import { Resend } from 'resend';
@@ -17,7 +18,13 @@ export async function GET(req: NextRequest) {
     req.headers.get('x-cron-secret') ??
     req.nextUrl.searchParams.get('secret');
 
-  if (!secret || secret !== process.env.CRON_SECRET) {
+  const expected = process.env.CRON_SECRET ?? '';
+  if (
+    !secret ||
+    !expected ||
+    secret.length !== expected.length ||
+    !crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(expected))
+  ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

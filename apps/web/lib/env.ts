@@ -11,8 +11,8 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().min(1),
   STRIPE_PRICE_INDIE: z.string().min(1),
   STRIPE_PRICE_PRO: z.string().min(1),
-  TERMSKIT_HMAC_SECRET: z.string().min(1),
-  CRON_SECRET: z.string().min(1),
+  TERMSKIT_HMAC_SECRET: z.string().min(32, 'HMAC_SECRET must be at least 32 characters'),
+  CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters'),
 });
 
 export type Env = z.infer<typeof envSchema>;

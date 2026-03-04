@@ -63,8 +63,13 @@ export class TermsKit {
 
   /**
    * Generate a hosted gate URL for a user to accept a policy.
-   * The uid parameter must be computed server-side using HMAC-SHA256.
-   * uid = crypto.createHmac('sha256', TERMSKIT_HMAC_SECRET).update(userId).digest('hex')
+   * The uid parameter must be computed server-side using HMAC-SHA256 with expiry:
+   *
+   * const expiry = Date.now() + 15 * 60 * 1000; // 15 min
+   * const hmac = crypto.createHmac('sha256', TERMSKIT_HMAC_SECRET)
+   *   .update(`${userId}.${expiry}`)
+   *   .digest('hex');
+   * const uid = `${hmac}.${expiry}`;
    */
   gateUrl(
     userId: string,

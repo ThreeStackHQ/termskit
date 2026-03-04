@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getWorkspaceFromApiKey, corsHeaders } from '@/lib/api-key';
+import { getWorkspaceFromApiKey, corsHeaders, checkIpRateLimit } from '@/lib/api-key';
 import { getDb, acceptances, policies, reacceptanceCampaigns } from '@termskit/db';
 import { eq, and, countDistinct, sql } from 'drizzle-orm';
 import { PLAN_LIMITS } from '@/lib/stripe';
@@ -19,6 +19,13 @@ export async function OPTIONS() {
 
 export async function POST(req: NextRequest) {
   const headers = corsHeaders();
+
+  // SEC-004: Per-IP rate limit — 20 req/min
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  if (!checkIpRateLimit(clientIp)) {
+    return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers });
+  }
+
   const workspace = await getWorkspaceFromApiKey(req);
 
   if (!workspace) {

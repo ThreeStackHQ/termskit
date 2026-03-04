@@ -6,14 +6,29 @@ import type { NextRequest } from 'next/server';
 // In-memory rate limiter: 200 req/min per API key
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 
-export function checkRateLimit(key: string): boolean {
+export function checkRateLimit(key: string, limit = 200): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(key);
   if (!entry || now > entry.resetAt) {
     rateLimitMap.set(key, { count: 1, resetAt: now + 60_000 });
     return true;
   }
-  if (entry.count >= 200) return false;
+  if (entry.count >= limit) return false;
+  entry.count++;
+  return true;
+}
+
+// SEC-004: Per-IP rate limit for POST /api/v1/accept — 20 req/min
+const ipRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+export function checkIpRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = ipRateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    ipRateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (entry.count >= 20) return false;
   entry.count++;
   return true;
 }

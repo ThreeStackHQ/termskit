@@ -14,6 +14,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
   }
 
+  // Prevent open redirect — only allow absolute https URLs
+  try {
+    const parsed = new URL(returnUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return NextResponse.json({ error: 'Invalid returnUrl' }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Invalid returnUrl' }, { status: 400 });
+  }
+
   const db = getDb();
   const ws = await db
     .select()
